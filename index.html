@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>缠论三级联动看盘 · 5倍递归 + 笔中枢 + 缩放联动</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e;
+    --up: #f85149; --down: #3fb950; --accent: #58a6ff; --gold: #d29922;
+    --bi: #e3b341; --zs: #58a6ff; --mark: #ffd166;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 14px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+  header .title { font-size: 17px; font-weight: 700; }
+  header .title span { color: var(--accent); }
+  input#symbol { background: #0d1117; border: 1px solid var(--border); color: var(--text); padding: 7px 11px; border-radius: 6px; font-size: 13px; font-weight: 700; text-transform: uppercase; width: 120px; letter-spacing: 0.5px; }
+  input#symbol:focus { outline: none; border-color: var(--accent); }
+  button { background: #238636; color: #fff; border: none; padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  button:hover { background: #2ea043; }
+  .status { margin-left: auto; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: inline-block; }
+  .dot.live { background: #3fb950; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .set-title { font-size: 13px; font-weight: 700; color: var(--gold); padding: 8px 2px 4px; letter-spacing: 0.5px; }
+  .set-title small { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .row { display: grid; gap: 10px; }
+  .row.cols4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 1200px) { .row.cols4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px) { .row.cols4 { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: border-color 0.15s; }
+  .panel:hover { border-color: var(--accent); }
+  .panel-head { padding: 7px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-head .lvl { font-size: 12px; font-weight: 700; color: var(--accent); }
+  .dir { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; }
+  .dir.long { background: rgba(248,81,73,0.15); color: var(--up); }
+  .dir.short { background: rgba(63,185,80,0.15); color: var(--down); }
+  .dir.flat { background: rgba(139,148,158,0.15); color: var(--muted); }
+  canvas { width: 100%; height: 175px; display: block; }
+  .panel-foot { padding: 7px 10px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); line-height: 1.5; min-height: 40px; }
+  .fractal-top { color: var(--up); } .fractal-bot { color: var(--down); }
+
+  .daily-bar { display: flex; align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; margin-bottom: 4px; cursor: pointer; }
+  .daily-bar:hover { border-color: var(--accent); }
+  .daily-bar .lvl { font-size: 12px; font-weight: 700; color: var(--gold); white-space: nowrap; }
+  .daily-bar .info { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .daily-bar .info b { color: var(--text); }
+
+  .signal-box { margin-top: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  .signal-box h3 { font-size: 13px; margin-bottom: 8px; color: var(--accent); }
+  .verdict { font-size: 14px; font-weight: 700; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; }
+  .verdict.fire-long { background: rgba(248,81,73,0.15); color: var(--up); }
+  .verdict.fire-short { background: rgba(63,185,80,0.15); color: var(--down); }
+  .verdict.wait { background: rgba(139,148,158,0.12); color: var(--muted); }
+  .legend { font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .legend b { color: var(--text); }
+
+  #fullscreen { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: none; flex-direction: column; padding: 10px 14px; }
+  #fullscreen.open { display: flex; }
+  .fs-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .fs-header .fs-title { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .fs-levels { display: flex; gap: 6px; flex-wrap: wrap; }
+  .fs-levels button { background: #21262d; color: var(--muted); border: 1px solid var(--border); padding: 5px 11px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 600; }
+  .fs-levels button:hover { border-color: var(--accent); color: var(--text); }
+  .fs-levels button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+  .fs-close { margin-left: auto; background: #da3633; color: #fff; }
+  .fs-close:hover { background: #f85149; }
+
+  .fs-main { flex: 3; display: flex; flex-direction: column; min-height: 0; }
+  .fs-main .main-label { font-size: 12px; font-weight: 700; color: var(--gold); padding: 4px 2px; display: flex; align-items: center; gap: 8px; }
+  .fs-main .main-label .zoom-hint { color: var(--muted); font-weight: 400; font-size: 11px; }
+  #fsCanvas { flex: 1; width: 100%; min-height: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; cursor: crosshair; }
+  .fs-info { padding: 6px 2px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .fs-info b { color: var(--text); }
+
+  .fs-sub { flex: 2; display: flex; flex-direction: column; gap: 6px; min-height: 0; margin-top: 6px; }
+  .fs-sub .sub-label { font-size: 11px; font-weight: 700; color: var(--accent); padding: 2px 2px 0; }
+  .fs-sub .sub-label .arrow { color: var(--gold); }
+  .fs-sub .sub-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .fs-sub canvas { flex: 1; width: 100%; min-height: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  .fs-sub .sub-info { font-size: 11px; color: var(--muted); padding: 3px 2px; line-height: 1.4; }
+  .fs-sub .sub-info b { color: var(--text); }
+  .fs-note { font-size: 11px; color: var(--muted); padding: 4px 2px; }
+  .fs-note b { color: var(--mark); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">缠论三级联动 <span>· 5倍递归 + 笔中枢 + 缩放联动</span></div>
+  <input id="symbol" value="BTCUSDT" spellcheck="false" />
+  <button onclick="switchSymbol()">切换币种</button>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">加载中…</span></div>
+</header>
+
+<div class="daily-bar" id="dailyBar"><span class="lvl">日线</span><span class="info">加载中…</span></div>
+
+<div class="set-title">套B · 5倍递归 <small>1m → 5m → 25m → 125m（25m/125m 自聚合）</small></div>
+<div class="row cols4" id="setB"></div>
+
+<div class="set-title">套A · 5倍递归 <small>3m → 15m → 75m → 375m（75m/375m 自聚合）</small></div>
+<div class="row cols4" id="setA"></div>
+
+<div class="signal-box">
+  <h3>🎯 发令枪（三级联立判决）</h3>
+  <div id="verdicts"></div>
+  <div class="legend">
+    <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
+    严格缠论：K线包含关系已处理 ｜ 笔要求顶底分型间至少隔1根独立K线 ｜ 中枢三笔重叠+延伸合并
+    全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
+  </div>
+</div>
+
+<div id="fullscreen">
+  <div class="fs-header">
+    <span class="fs-title">全屏 · 三级联动</span>
+    <div class="fs-levels" id="fsLevels"></div>
+    <button class="fs-close" onclick="closeFullscreen()">✕ 关闭</button>
+  </div>
+  <div class="fs-main">
+    <div class="main-label"><span id="fsMainLabel">主图</span><span class="zoom-hint" id="fsZoomHint"></span></div>
+    <canvas id="fsCanvas"></canvas>
+  </div>
+  <div class="fs-info" id="fsInfo">…</div>
+  <div class="fs-sub" id="fsSub"></div>
+  <div class="fs-note" id="fsNote"></div>
+</div>
+
+<script>
+const SYMBOL_INPUT = document.getElementById('symbol');
+let currentSymbol = 'BTCUSDT';
+let timer = null;
+let nativeData = {};
+let fsLevel = '25m';
+let fsZoom = 180;
+let fsCross = null;
+let rafPending = false;
+
+const PAD = { L: 6, R: 40, T: 16, B: 10 };
+
+const ALL_LEVELS = [
+  { key: '1d',   label: '1D',   base: '1d',  factor: 1 },
+  { key: '375m', label: '375M', base: '15m', factor: 25 },
+  { key: '125m', label: '125M', base: '5m',  factor: 25 },
+  { key: '75m',  label: '75M',  base: '15m', factor: 5 },
+  { key: '25m',  label: '25M',  base: '5m',  factor: 5 },
+  { key: '15m',  label: '15M',  base: '15m', factor: 1 },
+  { key: '5m',   label: '5M',   base: '5m',  factor: 1 },
+  { key: '3m',   label: '3M',   base: '3m',  factor: 1 },
+  { key: '1m',   label: '1M',   base: '1m',  factor: 1 },
+];
+const LEVEL_MAP = Object.fromEntries(ALL_LEVELS.map(l => [l.key, l]));
+
+const CHILDREN = {
+  '375m': ['75m', '15m'], '125m': ['25m', '5m'], '75m': ['15m', '3m'],
+  '25m': ['5m', '1m'], '15m': ['3m'], '5m': ['1m'],
+};
+
+const CONFIG = { setB: { levels: ['125m','25m','5m','1m'] }, setA: { levels: ['375m','75m','15m','3m'] } };
+const ROLE = {
+  '125m':'宏观方向','25m':'定方向','5m':'分型趋势','1m':'分型进场',
+  '375m':'宏观方向','75m':'定方向','15m':'分型趋势','3m':'分型进场',
+};
+
+const NATIVE = [
+  { interval: '1m', limit: 1500 }, { interval: '3m', limit: 1500 },
+  { interval: '5m', limit: 1500 }, { interval: '15m', limit: 1500 }, { interval: '1d', limit: 120 },
+];
+
+async function fetchKlines(symbol, interval, limit) {
+  const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} (${interval})`);
+  const raw = await res.json();
+  return raw.map(k => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+}
+
+function aggregate(klines, factor) {
+  if (factor <= 1) return klines;
+  const out = [];
+  for (let i = 0; i + factor <= klines.length; i += factor) {
+    const c = klines.slice(i, i + factor);
+    out.push({ time: c[0].time, open: c[0].open, high: Math.max(...c.map(k=>k.high)), low: Math.min(...c.map(k=>k.low)), close: c[c.length-1].close, volume: c.reduce((s,k)=>s+k.volume,0) });
+  }
+  return out;
+}
+
+function getLevelData(key) {
+  const lvl = LEVEL_MAP[key];
+  const base = nativeData[lvl.base];
+  if (!base) return [];
+  return aggregate(base, lvl.factor);
+}
+
+function levelMinutes(key) { return key === '1d' ? 1440 : parseInt(key); }
+function levelFactor(parentKey, childKey) { return levelMinutes(parentKey) / levelMinutes(childKey); }
+
+// K线包含关系合并（严格缠论第一步）
+function mergeContain(klines) {
+  const merged = [];
+  for (let i = 0; i < klines.length; i++) {
+    let cur = { ...klines[i], idx: [i] };
+    let changed = true;
+    while (changed && merged.length > 0) {
+      const prev = merged[merged.length - 1];
+      const contain = (prev.high >= cur.high && prev.low <= cur.low) || (cur.high >= prev.high && cur.low <= prev.low);
+      if (!contain) { changed = false; break; }
+      let up;
+      if (merged.length >= 2) up = prev.close > merged[merged.length - 2].close;
+      else up = prev.close >= prev.open;
+      const nk = {
+        time: prev.time, open: prev.open,
+        high: up ? Math.max(prev.high, cur.high) : Math.min(prev.high, cur.high),
+        low: up ? Math.max(prev.low, cur.low) : Math.min(prev.low, cur.low),
+        close: cur.close, volume: prev.volume + cur.volume,
+        idx: [...prev.idx, ...cur.idx],
+      };
+      merged.pop();
+      cur = nk;
+    }
+    merged.push(cur);
+  }
+  return merged;
+}
+
+function detectFractals(klines) {
+  const merged = mergeContain(klines);   // 先处理包含关系
+  const fr = [];
+  for (let i = 2; i < merged.length; i++) {
+    const k0 = merged[i-2], k1 = merged[i-1], k2 = merged[i];
+    let avg5 = 0, cnt = 0;
+    for (let j = i-7; j < i-2; j++) { if (j >= 0) { avg5 += merged[j].volume; cnt++; } }
+    avg5 = cnt > 0 ? avg5 / cnt : k1.volume;
+    const origIdx = k1.idx[k1.idx.length - 1];   // 画图定位用原K线index
+    if (k1.high > k0.high && k1.high > k2.high && k1.low > k0.low && k1.low > k2.low) {
+      const real = (k0.volume > avg5*1.5 && k1.volume > avg5*1.5 && k2.volume < avg5);
+      fr.push({ index: origIdx, mergedIdx: i-1, type: 'top', real, price: k1.high, time: k1.time });
+    }
+    if (k1.low < k0.low && k1.low < k2.low && k1.high < k0.high && k1.high < k2.high) {
+      const real = (k0.volume < avg5*0.6 && k1.volume < avg5*0.6 && k2.volume >= k1.volume*1.5);
+      fr.push({ index: origIdx, mergedIdx: i-1, type: 'bottom', real, price: k1.low, time: k1.time });
+    }
+  }
+  return fr;
+}
+
+// 严格笔：顶底分型交替 + 至少隔1根独立K线（mergedIdx差≥4）
+function buildBis(fractals) {
+  const bis = [];
+  let last = null;
+  for (const f of fractals) {
+    if (!last) { last = f; continue; }
+    if (last.type === f.type) {
+      if (f.type === 'top' && f.price > last.price) last = f;
+      else if (f.type === 'bottom' && f.price < last.price) last = f;
+      continue;
+    }
+    if (Math.abs(f.mergedIdx - last.mergedIdx) >= 4) { bis.push({ from: last, to: f }); last = f; }
+  }
+  return bis;
+}
+
+// 严格中枢：三笔重叠 + 相邻重叠合并（延伸）+ 分方向
+function buildZhongshus(bis) {
+  const candidates = [];
+  for (let i = 0; i + 2 < bis.length; i++) {
+    const segs = [bis[i], bis[i+1], bis[i+2]].map(b => ({ low: Math.min(b.from.price, b.to.price), high: Math.max(b.from.price, b.to.price) }));
+    const zd = Math.max(...segs.map(s => s.low));
+    const zg = Math.min(...segs.map(s => s.high));
+    if (zg > zd) candidates.push({ zd, zg, startIndex: bis[i].from.index, endIndex: bis[i+2].to.index, segStart: i, segEnd: i+2, dir: bis[i].from.type === 'bottom' ? 'up' : 'down' });
+  }
+  const merged = [];
+  for (const c of candidates) {
+    if (merged.length && c.segStart <= merged[merged.length-1].segEnd + 1) {
+      const last = merged[merged.length-1];
+      if (Math.max(last.zd, c.zd) < Math.min(last.zg, c.zg)) { last.zd = Math.max(last.zd, c.zd); last.zg = Math.min(last.zg, c.zg); last.endIndex = c.endIndex; last.segEnd = c.segEnd; continue; }
+    }
+    merged.push(c);
+  }
+  return merged;
+}
+
+function ma3(klines, i) { return i < 2 ? null : (klines[i].close + klines[i-1].close + klines[i-2].close) / 3; }
+
+function judgeDirection(klines, fractals) {
+  const last = klines.length - 1;
+  const m3 = ma3(klines, last);
+  const above = m3 !== null && klines[last].close > m3;
+  const realF = fractals.filter(f => f.real);
+  const lastReal = realF.length ? realF[realF.length-1] : null;
+  const info = lastReal ? `最近真${lastReal.type==='top'?'顶':'底'}分型@${lastReal.price}` : '无真分型';
+  if (m3 === null) return { dir: 'flat', label: '—', detail: info };
+  return { dir: above ? 'long' : 'short', label: above ? '多头' : '空头', detail: info };
+}
+
+// ===== 绘制（含十字光标 + 主图级别分隔线 + 高亮区间）=====
+function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTimes, hlTime) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (W <= 0 || H <= 0) return;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const padL = PAD.L, padR = PAD.R, padT = PAD.T, padB = PAD.B;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let min = Infinity, max = -Infinity;
+  for (const k of klines) { if (k.low < min) min = k.low; if (k.high > max) max = k.high; }
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const n = klines.length;
+  const cw = plotW / n;
+  const x = i => padL + i * cw + cw/2;
+  const y = p => padT + (max - p) / range * plotH;
+
+  // 价格网格
+  ctx.strokeStyle = '#21262d'; ctx.fillStyle = '#8b949e'; ctx.font = '9px sans-serif';
+  for (let g = 0; g <= 3; g++) {
+    const p = min + range * g / 3, yy = y(p);
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillText(p.toFixed(p < 1 ? 4 : 2), W - padR + 3, yy + 3);
+  }
+
+  // 主图级别分隔线（淡色，主图每根柱子边界）
+  if (gridTimes && gridTimes.length) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+    ctx.setLineDash([2,4]);
+    for (const gt of gridTimes) {
+      let idx = -1;
+      for (let i = 0; i < n; i++) { if (klines[i].time >= gt) { idx = i; break; } }
+      if (idx >= 0) { const cx = x(idx); ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + plotH); ctx.stroke(); }
+    }
+    ctx.setLineDash([]);
+  }
+
+  // 高亮区间（主图悬停那根在子图对应的几根）
+  if (hlTime) {
+    let s = -1, e = n - 1;
+    for (let i = 0; i < n; i++) {
+      if (klines[i].time >= hlTime.start && s < 0) s = i;
+      if (klines[i].time <= hlTime.end) e = i;
+    }
+    if (s >= 0 && e >= s) {
+      const x1 = padL + s * cw, x2 = padL + (e + 1) * cw;
+      ctx.fillStyle = 'rgba(255,209,102,0.16)';
+      ctx.fillRect(x1, padT, x2 - x1, plotH);
+      ctx.strokeStyle = 'rgba(255,209,102,0.7)';
+      ctx.setLineDash([4,3]);
+      ctx.strokeRect(x1, padT, x2 - x1, plotH);
+      ctx.setLineDash([]);
+    }
+  }
+
+  // 分型时间标记（黄虚线）
+  if (markTimes && markTimes.length) {
+    ctx.strokeStyle = 'rgba(255,209,102,0.65)'; ctx.setLineDash([5,4]); ctx.lineWidth = 1.2;
+    for (const mt of markTimes) {
+      let idx = -1;
+      for (let i = 0; i < n; i++) { if (klines[i].time <= mt) idx = i; else break; }
+      if (idx >= 0) { const cx = x(idx); ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + plotH); ctx.stroke(); }
+    }
+    ctx.setLineDash([]); ctx.lineWidth = 1;
+  }
+
+  // 中枢（分方向：红=上涨中枢，绿=下跌中枢）
+  for (const z of zhongshus) {
+    const x1 = x(z.startIndex), x2 = x(z.endIndex), yT = y(z.zg), yB = y(z.zd);
+    const up = z.dir === 'up';
+    ctx.fillStyle = up ? 'rgba(248,81,73,0.10)' : 'rgba(63,185,80,0.10)';
+    ctx.fillRect(x1, yT, x2 - x1, yB - yT);
+    ctx.strokeStyle = up ? 'rgba(248,81,73,0.6)' : 'rgba(63,185,80,0.6)';
+    ctx.setLineDash([4,3]); ctx.strokeRect(x1, yT, x2 - x1, yB - yT); ctx.setLineDash([]);
+  }
+
+  // 笔
+  ctx.strokeStyle = '#e3b341'; ctx.lineWidth = 1.5;
+  for (const b of bis) { ctx.beginPath(); ctx.moveTo(x(b.from.index), y(b.from.price)); ctx.lineTo(x(b.to.index), y(b.to.price)); ctx.stroke(); }
+  ctx.lineWidth = 1;
+
+  // K线
+  for (let i = 0; i < n; i++) {
+    const k = klines[i];
+    const color = k.close >= k.open ? '#f85149' : '#3fb950';
+    const cx = x(i);
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(cx, y(k.high)); ctx.lineTo(cx, y(k.low)); ctx.stroke();
+    const yO = y(k.open), yC = y(k.close);
+    const top = Math.min(yO, yC), h = Math.max(Math.abs(yO - yC), 1);
+    ctx.fillRect(cx - cw*0.32, top, cw*0.64, h);
+  }
+
+  // 分型
+  ctx.textAlign = 'center'; ctx.font = '12px sans-serif';
+  for (const f of fractals) {
+    const cx = x(f.index);
+    const fy = f.type === 'top' ? y(f.price) - 7 : y(f.price) + 8;
+    ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#6e7681';
+    ctx.fillText(f.type === 'top' ? '▲' : '▼', cx, fy);
+  }
+  ctx.textAlign = 'left';
+
+  // 最新价
+  const lp = klines[n-1].close;
+  ctx.strokeStyle = '#58a6ff'; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(padL, y(lp)); ctx.lineTo(W - padR, y(lp)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#58a6ff'; ctx.fillText(lp.toFixed(lp < 1 ? 4 : 2), W - padR + 3, y(lp) + 3);
+
+  // 十字光标
+  if (cross && cross.x >= padL && cross.x <= padL + plotW && cross.y >= padT && cross.y <= padT + plotH) {
+    const idx = Math.min(n - 1, Math.max(0, Math.floor((cross.x - padL) / cw)));
+    const k = klines[idx];
+    const price = max - (cross.y - padT) / plotH * range;
+    const priceStr = price.toFixed(price < 1 ? 4 : 2);
+    const timeStr = fmtFullTime(k.time);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.32)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(cross.x, padT); ctx.lineTo(cross.x, padT + plotH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL, cross.y); ctx.lineTo(padL + plotW, cross.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.font = '10px sans-serif';
+    const tw = 90, tlX = Math.min(Math.max(cross.x - tw/2, padL), padL + plotW - tw);
+    ctx.fillStyle = '#1f6feb'; ctx.fillRect(tlX, padT + 2, tw, 16);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText(timeStr, tlX + tw/2, padT + 14);
+
+    const plY = Math.min(Math.max(cross.y - 8, padT), padT + plotH - 16);
+    ctx.fillStyle = '#1f6feb'; ctx.fillRect(padL + plotW + 1, plY, padR - 2, 16);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left';
+    ctx.fillText(priceStr, padL + plotW + 3, plY + 12);
+
+    const bx = padL + plotW - 172, by = padT + 22, bw = 168, bh = 54;
+    ctx.fillStyle = 'rgba(13,17,23,0.9)'; ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeStyle = '#30363d'; ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = '#e6edf3'; ctx.textAlign = 'left';
+    ctx.fillText(`时间 ${timeStr}`, bx + 8, by + 14);
+    ctx.fillText(`开 ${k.open}   高 ${k.high}`, bx + 8, by + 27);
+    ctx.fillText(`低 ${k.low}   收 ${k.close}`, bx + 8, by + 40);
+    ctx.fillText(`量 ${fmtVol(k.volume)}`, bx + 8, by + 53);
+  }
+  ctx.textAlign = 'left';
+}
+
+function fmtVol(v) { return v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v.toFixed(0); }
+function fmtTime(ts) { const d = new Date(ts); const p = n => String(n).padStart(2,'0'); return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fmtFullTime(ts) { const d = new Date(ts); const p = n => String(n).padStart(2,'0'); return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+// ===== 普通 panel =====
+function buildPanel(containerId, key) {
+  const cont = document.getElementById(containerId);
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = `<div class="panel-head"><span class="lvl">${key} ${ROLE[key]||''}</span><span class="dir flat" id="dir_${key}">—</span></div><canvas id="cv_${key}"></canvas><div class="panel-foot" id="foot_${key}">…</div>`;
+  panel.onclick = () => openFullscreen(key);
+  cont.appendChild(panel);
+}
+
+function renderLevel(key, klines, fractals, bis, zhongshus, dir) {
+  const cv = document.getElementById('cv_' + key);
+  const dirEl = document.getElementById('dir_' + key);
+  const foot = document.getElementById('foot_' + key);
+  if (!cv) return;
+  draw(cv, klines, fractals, bis, zhongshus, null, null, null, null);
+  dirEl.className = 'dir ' + dir.dir; dirEl.textContent = dir.label;
+  const realT = fractals.filter(f => f.real && f.type === 'top').length;
+  const realB = fractals.filter(f => f.real && f.type === 'bottom').length;
+  const fake = fractals.filter(f => !f.real).length;
+  const last = klines[klines.length-1];
+  foot.innerHTML = `现价 <b style="color:var(--text)">${last.close}</b> ｜ 笔${bis.length} 中枢${zhongshus.length} ｜ 真顶${realT} 真底${realB} 假${fake}<br><span style="color:var(--text)">${dir.detail}</span>`;
+}
+
+// ===== 全屏 =====
+function buildFsLevels() {
+  const cont = document.getElementById('fsLevels');
+  cont.innerHTML = '';
+  for (const lvl of ALL_LEVELS) {
+    const b = document.createElement('button');
+    b.textContent = lvl.label;
+    b.onclick = () => { fsLevel = lvl.key; fsZoom = 180; fsCross = null; renderFullscreen(); buildFsLevels(); };
+    if (lvl.key === fsLevel) b.className = 'active';
+    cont.appendChild(b);
+  }
+}
+
+function openFullscreen(key) { fsLevel = key; fsZoom = 180; fsCross = null; document.getElementById('fullscreen').classList.add('open'); buildFsLevels(); renderFullscreen(); }
+function closeFullscreen() { document.getElementById('fullscreen').classList.remove('open'); }
+
+function renderFullscreen() {
+  const lvl = LEVEL_MAP[fsLevel];
+  const full = getLevelData(fsLevel);
+  const maxLen = full.length;
+  fsZoom = Math.min(Math.max(fsZoom, 20), maxLen);
+  const klines = full.slice(-fsZoom);
+  const fr = detectFractals(klines);
+  const bis = buildBis(fr);
+  const zs = buildZhongshus(bis);
+  const dir = judgeDirection(klines, fr);
+
+  // 主图悬停 index（从 fsCross 算）
+  let mainHoverIdx = -1;
+  const mainCv = document.getElementById('fsCanvas');
+  if (fsCross && mainCv.clientWidth > 0) {
+    const plotW = mainCv.clientWidth - PAD.L - PAD.R;
+    const cw = plotW / klines.length;
+    if (fsCross.x >= PAD.L && fsCross.x <= PAD.L + plotW) {
+      mainHoverIdx = Math.min(klines.length - 1, Math.max(0, Math.floor((fsCross.x - PAD.L) / cw)));
+    }
+  }
+
+  // 主图悬停那根的时间范围（用于子图高亮）
+  let hlTime = null;
+  if (mainHoverIdx >= 0) {
+    const t0 = klines[mainHoverIdx].time;
+    const t1 = mainHoverIdx + 1 < klines.length ? klines[mainHoverIdx + 1].time : t0 + levelMinutes(fsLevel) * 60000;
+    hlTime = { start: t0, end: t1 };
+  }
+
+  document.getElementById('fsMainLabel').textContent = `主图 · ${fsLevel}（${ROLE[fsLevel]||'自由切换'} · ${lvl.factor>1 ? lvl.base+'每'+lvl.factor+'根自聚合' : '原生'}）`;
+  document.getElementById('fsZoomHint').textContent = `显示 ${klines.length}/${maxLen} 根 · 滚轮缩放`;
+  draw(mainCv, klines, fr, bis, zs, null, fsCross, null, null);
+
+  const last = klines[klines.length-1];
+  const lastReal = fr.filter(f=>f.real).slice(-1)[0];
+  const realT = fr.filter(f => f.real && f.type === 'top').length;
+  const realB = fr.filter(f => f.real && f.type === 'bottom').length;
+  document.getElementById('fsInfo').innerHTML = `
+    <b>${fsLevel}</b> 现价 <b>${last.close}</b> ｜ 方向 <b style="color:${dir.dir==='long'?'#f85149':dir.dir==='short'?'#3fb950':'#8b949e'}">${dir.label}</b> ｜ 笔 <b>${bis.length}</b> 中枢 <b>${zs.length}</b> ｜ 真顶 <b style="color:#f85149">${realT}</b> 真底 <b style="color:#3fb950">${realB}</b> ｜ ${lastReal ? `最近真${lastReal.type==='top'?'顶':'底'}分型@${lastReal.price} (${fmtTime(lastReal.time)})` : '无真分型'}
+  `;
+
+  const children = CHILDREN[fsLevel] || [];
+  const subCont = document.getElementById('fsSub');
+  const note = document.getElementById('fsNote');
+  const markTimes = fr.filter(f => f.real).slice(-3).map(f => f.time);
+  const gridTimes = klines.map(k => k.time);   // 主图每根柱子边界
+
+  if (children.length === 0) {
+    subCont.innerHTML = '';
+    note.innerHTML = `<b>${fsLevel}</b> 已是最细级别，无更细子级联动。`;
+    return;
+  }
+
+  let html = '';
+  for (let i = 0; i < children.length; i++) {
+    const ck = children[i];
+    const role = i === 0 ? '分型趋势（÷5）' : '分型进场（÷25）';
+    html += `<div class="sub-wrap"><div class="sub-label"><span class="arrow">└</span> ${ck} <span style="color:var(--muted)">${role}</span></div><canvas id="subcv_${ck}"></canvas><div class="sub-info" id="subinfo_${ck}">…</div></div>`;
+  }
+  subCont.innerHTML = html;
+
+  for (const ck of children) {
+    const factor = levelFactor(fsLevel, ck);
+    const subCount = Math.min(Math.round(fsZoom * factor), getLevelData(ck).length);
+    const subData = getLevelData(ck).slice(-subCount);
+    const sfr = detectFractals(subData);
+    const sbis = buildBis(sfr);
+    const szs = buildZhongshus(sbis);
+    const sdir = judgeDirection(subData, sfr);
+    draw(document.getElementById('subcv_' + ck), subData, sfr, sbis, szs, markTimes, null, gridTimes, hlTime);
+    const slast = subData[subData.length-1];
+    const slastReal = sfr.filter(f=>f.real).slice(-1)[0];
+    document.getElementById('subinfo_' + ck).innerHTML = `<b>${ck}</b> 现价 <b>${slast.close}</b> ｜ <b style="color:${sdir.dir==='long'?'#f85149':sdir.dir==='short'?'#3fb950':'#8b949e'}">${sdir.label}</b> ｜ ${slastReal ? `最近真${slastReal.type==='top'?'顶':'底'}分型@${slastReal.price} (${fmtTime(slastReal.time)})` : '无真分型'}`;
+  }
+
+  note.innerHTML = `<b>淡色竖线</b>=主图每根柱子的边界在子图的位置 ｜ <b style="color:#ffd166">黄框高亮</b>=主图悬停那根柱子，在子图对应的 ${Math.round(levelFactor(fsLevel, children[0]))} 根 ｜ 三图时间跨度锁定（滚轮同步缩放）`;
+}
+
+// ===== 全屏交互 =====
+function initFsInteractions() {
+  const cv = document.getElementById('fsCanvas');
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const maxLen = getLevelData(fsLevel).length;
+    if (e.deltaY < 0) fsZoom = Math.max(20, Math.floor(fsZoom * 0.75));
+    else fsZoom = Math.min(maxLen, Math.floor(fsZoom * 1.33));
+    renderFullscreen();
+  }, { passive: false });
+
+  cv.addEventListener('mousemove', e => {
+    const rect = cv.getBoundingClientRect();
+    fsCross = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => { rafPending = false; renderFullscreen(); });
+    }
+  });
+
+  cv.addEventListener('mouseleave', () => { fsCross = null; renderFullscreen(); });
+}
+
+// ===== 主加载 =====
+async function loadAll() {
+  const sym = currentSymbol;
+  const dot = document.getElementById('dot');
+  const st = document.getElementById('statusText');
+  dot.className = 'dot'; st.textContent = '拉取中…';
+  try {
+    await Promise.all(NATIVE.map(async n => { nativeData[n.interval] = await fetchKlines(sym, n.interval, n.limit); }));
+
+    for (const [setKey, set] of Object.entries(CONFIG)) {
+      for (const key of set.levels) {
+        const klines = getLevelData(key).slice(-120);
+        const fr = detectFractals(klines);
+        const bis = buildBis(fr);
+        const zs = buildZhongshus(bis);
+        const dir = judgeDirection(klines, fr);
+        renderLevel(key, klines, fr, bis, zs, dir);
+      }
+    }
+
+    const daily = nativeData['1d'].slice(-120);
+    const dailyFr = detectFractals(daily);
+    const dailyDir = judgeDirection(daily, dailyFr);
+    const lastDaily = daily[daily.length-1];
+    const lastDailyFr = dailyFr.filter(f=>f.real).slice(-1)[0];
+    document.getElementById('dailyBar').innerHTML = `<span class="lvl">日线</span><span class="info">收盘 <b>${lastDaily.close}</b> ｜ 方向 <b style="color:${dailyDir.dir==='long'?'#f85149':dailyDir.dir==='short'?'#3fb950':'#8b949e'}">${dailyDir.label}</b> ｜ ${lastDailyFr ? `最近真${lastDailyFr.type==='top'?'顶':'底'}分型@${lastDailyFr.price}` : '无真分型'}</span>`;
+    document.getElementById('dailyBar').onclick = () => openFullscreen('1d');
+
+    renderVerdicts();
+    if (document.getElementById('fullscreen').classList.contains('open')) renderFullscreen();
+
+    dot.className = 'dot live';
+    st.textContent = `已更新 · ${sym} · ${fmtTime(Date.now())}`;
+  } catch (e) {
+    dot.className = 'dot'; st.textContent = `拉取失败：${e.message}`;
+  }
+}
+
+function renderVerdicts() {
+  const cont = document.getElementById('verdicts');
+  const out = [];
+  for (const [setKey, set] of Object.entries(CONFIG)) {
+    const [mainK, trendK, entryK] = [set.levels[1], set.levels[2], set.levels[3]];
+    const entryF = detectFractals(getLevelData(entryK).slice(-120)).filter(f => f.real).slice(-1)[0];
+    const trendDir = judgeDirection(getLevelData(trendK).slice(-120), detectFractals(getLevelData(trendK).slice(-120)));
+    const mainDir = judgeDirection(getLevelData(mainK).slice(-120), detectFractals(getLevelData(mainK).slice(-120)));
+    const setName = setKey === 'setB' ? '套B' : '套A';
+    let text, cls;
+    if (!entryF) { text = `⏳ ${setName}：${entryK}暂无真分型（等分型+验量）`; cls = 'wait'; }
+    else if (entryF.type === 'top' && trendDir.dir === 'short' && mainDir.dir === 'short') { text = `🔴 ${setName} 做空发令枪：${entryK}真顶分型 + ${trendK}空头 + ${mainK}空头 → 反弹空，止损${entryF.price}上方`; cls = 'fire-short'; }
+    else if (entryF.type === 'bottom' && trendDir.dir === 'long' && mainDir.dir === 'long') { text = `🟢 ${setName} 做多发令枪：${entryK}真底分型 + ${trendK}多头 + ${mainK}多头 → 回调多，止损${entryF.price}下方`; cls = 'fire-long'; }
+    else { text = `⚠️ ${setName}：分型已现但未共振（${entryK}${entryF.type==='top'?'顶':'底'} vs ${trendK}${trendDir.label} vs ${mainK}${mainDir.label}）→ 观察`; cls = 'wait'; }
+    out.push(`<div class="verdict ${cls}">${text}</div>`);
+  }
+  cont.innerHTML = out.join('');
+}
+
+function switchSymbol() {
+  currentSymbol = SYMBOL_INPUT.value.trim().toUpperCase();
+  if (!currentSymbol) { currentSymbol = 'BTCUSDT'; SYMBOL_INPUT.value = currentSymbol; }
+  loadAll();
+}
+
+for (const [setKey, set] of Object.entries(CONFIG)) for (const key of set.levels) buildPanel(setKey, key);
+buildFsLevels();
+initFsInteractions();
+window.addEventListener('resize', () => { if (document.getElementById('fullscreen').classList.contains('open')) renderFullscreen(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFullscreen(); });
+loadAll();
+timer = setInterval(loadAll, 30000);
+</script>
+</body>
+</html>
