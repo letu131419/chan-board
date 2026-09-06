@@ -343,7 +343,7 @@ function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTi
     let s = -1, e = n - 1;
     for (let i = 0; i < n; i++) {
       if (klines[i].time >= hlTime.start && s < 0) s = i;
-      if (klines[i].time <= hlTime.end) e = i;
+      if (klines[i].time < hlTime.end) e = i;   // 严格小于，排除下一根柱子的边界
     }
     if (s >= 0 && e >= s) {
       const x1 = padL + s * cw, x2 = padL + (e + 1) * cw;
