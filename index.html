@@ -573,12 +573,15 @@ function renderFullscreen() {
 // ===== 全屏交互 =====
 function initFsInteractions() {
   const cv = document.getElementById('fsCanvas');
-  cv.addEventListener('wheel', e => {
-    e.preventDefault();
-    const maxLen = getLevelData(fsLevel).length;
-    if (e.deltaY < 0) fsZoom = Math.max(20, Math.floor(fsZoom * 0.75));
-    else fsZoom = Math.min(maxLen, Math.floor(fsZoom * 1.33));
-    renderFullscreen();
+  // 滚轮缩放：主图 + 子图都能触发（事件委托，任何 canvas 上滚动都同步缩放三图）
+  document.getElementById('fullscreen').addEventListener('wheel', e => {
+    if (e.target.tagName === 'CANVAS') {
+      e.preventDefault();
+      const maxLen = getLevelData(fsLevel).length;
+      if (e.deltaY < 0) fsZoom = Math.max(20, Math.floor(fsZoom * 0.75));
+      else fsZoom = Math.min(maxLen, Math.floor(fsZoom * 1.33));
+      renderFullscreen();
+    }
   }, { passive: false });
 
   cv.addEventListener('mousemove', e => {
