@@ -110,7 +110,7 @@
   <div id="verdicts"></div>
   <div class="legend">
     <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
-    严格缠论：K线包含关系已处理 ｜ 笔要求顶底分型间至少隔1根独立K线 ｜ 中枢三笔重叠+延伸合并
+    用户版中枢：箱体上沿=绿柱最高价、下沿=绿柱最低价（含影线）｜ 踩回/重叠合并成大中枢（取并集）
     全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
   </div>
 </div>
@@ -264,20 +264,46 @@ function buildBis(fractals) {
   return bis;
 }
 
-// 严格中枢：三笔重叠 + 相邻重叠合并（延伸）+ 分方向
-function buildZhongshus(bis) {
+// 用户版中枢：三笔重叠定位范围，边界用「绿柱（下跌K线）极值」
+// 上沿 = 范围内绿柱最高价；下沿 = 范围内绿柱最低价（均含影线）
+function buildZhongshus(bis, klines) {
   const candidates = [];
   for (let i = 0; i + 2 < bis.length; i++) {
     const segs = [bis[i], bis[i+1], bis[i+2]].map(b => ({ low: Math.min(b.from.price, b.to.price), high: Math.max(b.from.price, b.to.price) }));
     const zd = Math.max(...segs.map(s => s.low));
     const zg = Math.min(...segs.map(s => s.high));
-    if (zg > zd) candidates.push({ zd, zg, startIndex: bis[i].from.index, endIndex: bis[i+2].to.index, segStart: i, segEnd: i+2, dir: bis[i].from.type === 'bottom' ? 'up' : 'down' });
+    if (zg > zd) {
+      const startIndex = bis[i].from.index;
+      const endIndex = bis[i+2].to.index;
+      let boxHigh = null, boxLow = null;
+      for (let k = startIndex; k <= endIndex && k < klines.length; k++) {
+        const kk = klines[k];
+        if (kk.close < kk.open) {  // 绿柱（下跌K线）
+          if (boxHigh === null || kk.high > boxHigh) boxHigh = kk.high;
+          if (boxLow === null || kk.low < boxLow) boxLow = kk.low;
+        }
+      }
+      candidates.push({ zd: boxLow !== null ? boxLow : zd, zg: boxHigh !== null ? boxHigh : zg, startIndex, endIndex, segStart: i, segEnd: i+2, dir: bis[i].from.type === 'bottom' ? 'up' : 'down' });
+    }
   }
   const merged = [];
   for (const c of candidates) {
     if (merged.length && c.segStart <= merged[merged.length-1].segEnd + 1) {
       const last = merged[merged.length-1];
-      if (Math.max(last.zd, c.zd) < Math.min(last.zg, c.zg)) { last.zd = Math.max(last.zd, c.zd); last.zg = Math.min(last.zg, c.zg); last.endIndex = c.endIndex; last.segEnd = c.segEnd; continue; }
+      // 踩回判定：两中枢之间的绿柱最低点 < 前中枢上沿 → 踩回
+      let steppedBack = false;
+      for (let k = last.endIndex; k <= c.startIndex && k < klines.length; k++) {
+        const kk = klines[k];
+        if (kk.close < kk.open && kk.low < last.zg) { steppedBack = true; break; }
+      }
+      // 重叠 或 踩回 → 合并成大中枢（取并集，框住更大范围）
+      if (Math.max(last.zd, c.zd) < Math.min(last.zg, c.zg) || steppedBack) {
+        last.zd = Math.min(last.zd, c.zd);
+        last.zg = Math.max(last.zg, c.zg);
+        last.endIndex = c.endIndex;
+        last.segEnd = c.segEnd;
+        continue;
+      }
     }
     merged.push(c);
   }
@@ -499,7 +525,7 @@ function renderFullscreen() {
   const klines = full.slice(-fsZoom);
   const fr = detectFractals(klines);
   const bis = buildBis(fr);
-  const zs = buildZhongshus(bis);
+  const zs = buildZhongshus(bis, klines);
   const dir = judgeDirection(klines, fr);
 
   // 主图悬停 index（从 fsCross 算）
@@ -559,7 +585,7 @@ function renderFullscreen() {
     const subData = getLevelData(ck).slice(-subCount);
     const sfr = detectFractals(subData);
     const sbis = buildBis(sfr);
-    const szs = buildZhongshus(sbis);
+    const szs = buildZhongshus(sbis, subData);
     const sdir = judgeDirection(subData, sfr);
     draw(document.getElementById('subcv_' + ck), subData, sfr, sbis, szs, markTimes, null, gridTimes, hlTime);
     const slast = subData[subData.length-1];
@@ -610,7 +636,7 @@ async function loadAll() {
         const klines = getLevelData(key).slice(-120);
         const fr = detectFractals(klines);
         const bis = buildBis(fr);
-        const zs = buildZhongshus(bis);
+        const zs = buildZhongshus(bis, klines);
         const dir = judgeDirection(klines, fr);
         renderLevel(key, klines, fr, bis, zs, dir);
       }
