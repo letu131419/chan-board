@@ -244,15 +244,15 @@ function detectFractals(klines) {
     if (k1.high > k0.high && k1.high > k2.high && k1.low > k0.low && k1.low > k2.low) {
       const real = (k0.volume > avg5*1.5 && k1.volume > avg5*1.5 && k2.volume < avg5);
       fr.push({ index: origIdx, mergedIdx: i-1, type: 'top', real, pending, price: k1.high, time: k1.time });
-    } else if (pending && k1.high > k0.high && k1.low > k0.low) {
-      // 顶分型苗头：中间K线已比左K线高（顶雏形），右K线未收盘未确认 → 提前标注
+    } else if (pending && k1.high > k0.high && k1.low > k0.low && k2.close < k2.open) {
+      // 顶分型苗头：中间K线到顶 + 右K线(未收盘)已转阴开始回落 → 才是真苗头
       fr.push({ index: origIdx, mergedIdx: i-1, type: 'top', real: false, pending: true, price: k1.high, time: k1.time });
     }
     if (k1.low < k0.low && k1.low < k2.low && k1.high < k0.high && k1.high < k2.high) {
       const real = (k0.volume < avg5*0.6 && k1.volume < avg5*0.6 && k2.volume >= k1.volume*1.5);
       fr.push({ index: origIdx, mergedIdx: i-1, type: 'bottom', real, pending, price: k1.low, time: k1.time });
-    } else if (pending && k1.low < k0.low && k1.high < k0.high) {
-      // 底分型苗头：中间K线已比左K线低（底雏形），右K线未收盘未确认 → 提前标注
+    } else if (pending && k1.low < k0.low && k1.high < k0.high && k2.close > k2.open) {
+      // 底分型苗头：中间K线到底 + 右K线(未收盘)已转阳开始反弹 → 才是真苗头
       fr.push({ index: origIdx, mergedIdx: i-1, type: 'bottom', real: false, pending: true, price: k1.low, time: k1.time });
     }
   }
