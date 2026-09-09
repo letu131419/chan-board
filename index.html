@@ -136,7 +136,7 @@ let currentSymbol = 'BTCUSDT';
 let timer = null;
 let nativeData = {};
 let fsLevel = '25m';
-let fsZoom = 180;
+let fsZoom = 360;
 let fsCross = null;
 let rafPending = false;
 
@@ -544,13 +544,13 @@ function buildFsLevels() {
   for (const lvl of ALL_LEVELS) {
     const b = document.createElement('button');
     b.textContent = lvl.label;
-    b.onclick = () => { fsLevel = lvl.key; fsZoom = 180; fsCross = null; renderFullscreen(); buildFsLevels(); };
+    b.onclick = () => { fsLevel = lvl.key; fsZoom = 360; fsCross = null; renderFullscreen(); buildFsLevels(); };
     if (lvl.key === fsLevel) b.className = 'active';
     cont.appendChild(b);
   }
 }
 
-function openFullscreen(key) { fsLevel = key; fsZoom = 180; fsCross = null; document.getElementById('fullscreen').classList.add('open'); buildFsLevels(); renderFullscreen(); }
+function openFullscreen(key) { fsLevel = key; fsZoom = 360; fsCross = null; document.getElementById('fullscreen').classList.add('open'); buildFsLevels(); renderFullscreen(); }
 function closeFullscreen() { document.getElementById('fullscreen').classList.remove('open'); }
 
 function renderFullscreen() {
@@ -669,7 +669,7 @@ async function loadAll() {
 
     for (const [setKey, set] of Object.entries(CONFIG)) {
       for (const key of set.levels) {
-        const klines = getLevelData(key).slice(-120);
+        const klines = getLevelData(key).slice(-360);
         const fr = detectFractals(klines);
         const bis = buildBis(fr);
         const zs = buildZhongshus(buildSegments(bis), klines);
