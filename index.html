@@ -310,8 +310,6 @@ function buildZhongshus(bis, klines) {
   return merged;
 }
 
-function ma3(klines, i) { return i < 2 ? null : (klines[i].close + klines[i-1].close + klines[i-2].close) / 3; }
-
 function judgeDirection(klines, fractals) {
   const last = klines.length - 1;
   const realF = fractals.filter(f => f.real);
