@@ -712,15 +712,47 @@ function renderVerdicts() {
   const out = [];
   for (const [setKey, set] of Object.entries(CONFIG)) {
     const [mainK, trendK, entryK] = [set.levels[1], set.levels[2], set.levels[3]];
-    const entryF = detectFractals(getLevelData(entryK).slice(-120)).filter(f => f.real).slice(-1)[0];
-    const trendDir = judgeDirection(getLevelData(trendK).slice(-120), detectFractals(getLevelData(trendK).slice(-120)));
-    const mainDir = judgeDirection(getLevelData(mainK).slice(-120), detectFractals(getLevelData(mainK).slice(-120)));
     const setName = setKey === 'setB' ? '套B' : '套A';
+    const entryData = getLevelData(entryK).slice(-120);
+    const trendData = getLevelData(trendK).slice(-120);
+    const mainData = getLevelData(mainK).slice(-120);
+    const entryFr = detectFractals(entryData);
+    const trendFr = detectFractals(trendData);
+    const mainFr = detectFractals(mainData);
+    const entryF = entryFr.filter(f => f.real).slice(-1)[0];
+    const trendDir = judgeDirection(trendData, trendFr);
+    const mainDir = judgeDirection(mainData, mainFr);
+    // 路2：mainK 的分型苗头（右K线未收盘 = pending）
+    const mainPendingF = mainFr.filter(f => f.pending).slice(-1)[0];
+
     let text, cls;
-    if (!entryF) { text = `⏳ ${setName}：${entryK}暂无真分型（等分型+验量）`; cls = 'wait'; }
-    else if (entryF.type === 'top' && trendDir.dir === 'short' && mainDir.dir === 'short') { text = `🔴 ${setName} 做空发令枪：${entryK}真顶分型 + ${trendK}空头 + ${mainK}空头 → 反弹空，止损${entryF.price}上方`; cls = 'fire-short'; }
-    else if (entryF.type === 'bottom' && trendDir.dir === 'long' && mainDir.dir === 'long') { text = `🟢 ${setName} 做多发令枪：${entryK}真底分型 + ${trendK}多头 + ${mainK}多头 → 回调多，止损${entryF.price}下方`; cls = 'fire-long'; }
-    else { text = `⚠️ ${setName}：分型已现但未共振（${entryK}${entryF.type==='top'?'顶':'底'} vs ${trendK}${trendDir.label} vs ${mainK}${mainDir.label}）→ 观察`; cls = 'wait'; }
+    if (mainPendingF) {
+      // 锁死规则：mainK 苗头一出现，不等收盘，去次级别(trendK)+更次级别(entryK)找同步确认
+      const ptype = mainPendingF.type === 'top' ? '顶' : '底';
+      const act = mainPendingF.type === 'top' ? '反弹空' : '回调多';
+      const wantDir = mainPendingF.type === 'top' ? 'short' : 'long';
+      const trendOk = trendDir.dir === wantDir;
+      const entryOk = entryF && (mainPendingF.type === 'top' ? entryF.type === 'top' : entryF.type === 'bottom');
+      if (trendOk && entryOk) {
+        text = `⚡${setName}【提前】${mainK}${ptype}苗头(未收盘) + ${trendK}已转${trendDir.label} + ${entryK}已转 → 可${act}，止损${mainPendingF.price}${mainPendingF.type === 'top' ? '上方' : '下方'}（等${mainK}收盘确认）`;
+        cls = mainPendingF.type === 'top' ? 'fire-short' : 'fire-long';
+      } else {
+        text = `👀${setName}【观察】${mainK}${ptype}苗头(未收盘)，但${trendK}${trendDir.label} / ${entryK}${entryF ? (entryF.type === 'top' ? '顶' : '底') : '无'}未同步 → 等次级别确认`;
+        cls = 'wait';
+      }
+    } else if (!entryF) {
+      text = `⏳ ${setName}：${entryK}暂无真分型（等分型+验量）`;
+      cls = 'wait';
+    } else if (entryF.type === 'top' && trendDir.dir === 'short' && mainDir.dir === 'short') {
+      text = `🔴 ${setName} 做空发令枪：${entryK}真顶分型 + ${trendK}空头 + ${mainK}空头 → 反弹空，止损${entryF.price}上方`;
+      cls = 'fire-short';
+    } else if (entryF.type === 'bottom' && trendDir.dir === 'long' && mainDir.dir === 'long') {
+      text = `🟢 ${setName} 做多发令枪：${entryK}真底分型 + ${trendK}多头 + ${mainK}多头 → 回调多，止损${entryF.price}下方`;
+      cls = 'fire-long';
+    } else {
+      text = `⚠️ ${setName}：分型已现但未共振（${entryK}${entryF.type === 'top' ? '顶' : '底'} vs ${trendK}${trendDir.label} vs ${mainK}${mainDir.label}）→ 观察`;
+      cls = 'wait';
+    }
     out.push(`<div class="verdict ${cls}">${text}</div>`);
   }
   cont.innerHTML = out.join('');
