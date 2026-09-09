@@ -109,8 +109,8 @@
   <h3>🎯 发令枪（三级联立判决）</h3>
   <div id="verdicts"></div>
   <div class="legend">
-    <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
-    中枢=3线段重叠(次级别走势) ｜ 线段=3笔重叠 ｜ 边界=绿柱最高/最低价(含影线) ｜ 踩回合并取并集
+    <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 <b style="opacity:.6">△/▽空心</b>=实时苗头(未收盘) ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
+    中枢=3笔重叠(简化) ｜ 边界=绿柱最高/最低价(含影线) ｜ 连接段没踩回则独立、踩回才合并取并集
     全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
   </div>
 </div>
@@ -230,19 +230,22 @@ function mergeContain(klines) {
 function detectFractals(klines) {
   const merged = mergeContain(klines);   // 先处理包含关系
   const fr = [];
+  const lastIdx = klines.length - 1;
   for (let i = 2; i < merged.length; i++) {
     const k0 = merged[i-2], k1 = merged[i-1], k2 = merged[i];
     let avg5 = 0, cnt = 0;
     for (let j = i-7; j < i-2; j++) { if (j >= 0) { avg5 += merged[j].volume; cnt++; } }
     avg5 = cnt > 0 ? avg5 / cnt : k1.volume;
     const origIdx = k1.idx[k1.idx.length - 1];   // 画图定位用原K线index
+    // 右K线(k2)是否含最后一根原始K线 = 分型是否还在走（未收盘）→ pending 苗头
+    const pending = Math.max(...k2.idx) >= lastIdx;
     if (k1.high > k0.high && k1.high > k2.high && k1.low > k0.low && k1.low > k2.low) {
       const real = (k0.volume > avg5*1.5 && k1.volume > avg5*1.5 && k2.volume < avg5);
-      fr.push({ index: origIdx, mergedIdx: i-1, type: 'top', real, price: k1.high, time: k1.time });
+      fr.push({ index: origIdx, mergedIdx: i-1, type: 'top', real, pending, price: k1.high, time: k1.time });
     }
     if (k1.low < k0.low && k1.low < k2.low && k1.high < k0.high && k1.high < k2.high) {
       const real = (k0.volume < avg5*0.6 && k1.volume < avg5*0.6 && k2.volume >= k1.volume*1.5);
-      fr.push({ index: origIdx, mergedIdx: i-1, type: 'bottom', real, price: k1.low, time: k1.time });
+      fr.push({ index: origIdx, mergedIdx: i-1, type: 'bottom', real, pending, price: k1.low, time: k1.time });
     }
   }
   return fr;
@@ -461,8 +464,16 @@ function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTi
   for (const f of fractals) {
     const cx = x(f.index);
     const fy = f.type === 'top' ? y(f.price) - 7 : y(f.price) + 8;
-    ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#6e7681';
-    ctx.fillText(f.type === 'top' ? '▲' : '▼', cx, fy);
+    if (f.pending) {
+      // 实时苗头（右K线未收盘）：空心符号 + 半透明，提示「还在走，未确认」
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#8b949e';
+      ctx.fillText(f.type === 'top' ? '△' : '▽', cx, fy);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#6e7681';
+      ctx.fillText(f.type === 'top' ? '▲' : '▼', cx, fy);
+    }
   }
   ctx.textAlign = 'left';
 
