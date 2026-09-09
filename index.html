@@ -314,13 +314,25 @@ function ma3(klines, i) { return i < 2 ? null : (klines[i].close + klines[i-1].c
 
 function judgeDirection(klines, fractals) {
   const last = klines.length - 1;
-  const m3 = ma3(klines, last);
-  const above = m3 !== null && klines[last].close > m3;
   const realF = fractals.filter(f => f.real);
   const lastReal = realF.length ? realF[realF.length-1] : null;
   const info = lastReal ? `最近真${lastReal.type==='top'?'顶':'底'}分型@${lastReal.price}` : '无真分型';
-  if (m3 === null) return { dir: 'flat', label: '—', detail: info };
-  return { dir: above ? 'long' : 'short', label: above ? '多头' : '空头', detail: info };
+  // 🔴 方向判定 = 分型高低点序列（窗口极值对比，对噪音鲁棒；MA3 降级为辅助，2026-09-09 起）
+  const W = 15;
+  if (klines.length < 2 * W) return { dir: 'flat', label: '—', detail: info };
+  const recent = klines.slice(-W);
+  const prior = klines.slice(-2 * W, -W);
+  const rLow = Math.min(...recent.map(k => k.low));
+  const pLow = Math.min(...prior.map(k => k.low));
+  const rHigh = Math.max(...recent.map(k => k.high));
+  const pHigh = Math.max(...prior.map(k => k.high));
+  const botUp = rLow > pLow;
+  const topUp = rHigh > pHigh;
+  let dir, label;
+  if (botUp && topUp) { dir = 'long'; label = '多头'; }
+  else if (!botUp && !topUp) { dir = 'short'; label = '空头'; }
+  else { dir = 'flat'; label = '震荡'; }
+  return { dir, label, detail: info };
 }
 
 // ===== 绘制（含十字光标 + 主图级别分隔线 + 高亮区间）=====
