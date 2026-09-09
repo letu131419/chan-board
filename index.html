@@ -302,21 +302,33 @@ function buildZhongshus(bis, klines) {
   }
   const merged = [];
   for (const c of candidates) {
-    if (merged.length && c.segStart <= merged[merged.length-1].segEnd + 1) {
+    if (merged.length) {
       const last = merged[merged.length-1];
-      // 踩回判定：两中枢之间的绿柱最低点 < 前中枢上沿 → 踩回
-      let steppedBack = false;
-      for (let k = last.endIndex; k <= c.startIndex && k < klines.length; k++) {
-        const kk = klines[k];
-        if (kk.close < kk.open && kk.low < last.zg) { steppedBack = true; break; }
-      }
-      // 重叠 或 踩回 → 合并成大中枢（取并集，框住更大范围）
-      if (Math.max(last.zd, c.zd) < Math.min(last.zg, c.zg) || steppedBack) {
-        last.zd = Math.min(last.zd, c.zd);
-        last.zg = Math.max(last.zg, c.zg);
-        last.endIndex = c.endIndex;
-        last.segEnd = c.segEnd;
-        continue;
+      if (c.segStart <= last.segEnd + 1) {
+        // 相邻候选（共享笔）= 延伸，取交集合并（震荡的公共区间）
+        if (Math.max(last.zd, c.zd) < Math.min(last.zg, c.zg)) {
+          last.zd = Math.max(last.zd, c.zd);
+          last.zg = Math.min(last.zg, c.zg);
+          last.endIndex = c.endIndex;
+          last.segEnd = c.segEnd;
+          continue;
+        }
+      } else {
+        // 不相邻候选（中间有连接段）：踩回判定
+        // 连接段绿柱最低点 < 前中枢上沿 → 踩回 → 合并取并集；否则独立
+        let steppedBack = false;
+        for (let k = last.endIndex; k <= c.startIndex && k < klines.length; k++) {
+          const kk = klines[k];
+          if (kk.close < kk.open && kk.low < last.zg) { steppedBack = true; break; }
+        }
+        if (steppedBack) {
+          last.zd = Math.min(last.zd, c.zd);
+          last.zg = Math.max(last.zg, c.zg);
+          last.endIndex = c.endIndex;
+          last.segEnd = c.segEnd;
+          continue;
+        }
+        // 没踩回：连接段分隔，独立中枢
       }
     }
     merged.push(c);
