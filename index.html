@@ -50,12 +50,13 @@
   .daily-bar .info { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .daily-bar .info b { color: var(--text); }
 
-  .signal-box { margin-top: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
-  .signal-box h3 { font-size: 13px; margin-bottom: 8px; color: var(--accent); }
-  .verdict { font-size: 14px; font-weight: 700; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; }
-  .verdict.fire-long { background: rgba(248,81,73,0.15); color: var(--up); }
-  .verdict.fire-short { background: rgba(63,185,80,0.15); color: var(--down); }
-  .verdict.wait { background: rgba(139,148,158,0.12); color: var(--muted); }
+  .signal-box { margin: 10px 0 4px; padding: 12px 14px; background: var(--panel); border: 2px solid #e3b341; border-radius: 10px; }
+  .signal-box h3 { font-size: 14px; margin-bottom: 8px; color: var(--accent); font-weight: 800; }
+  .verdict { font-size: 17px; font-weight: 800; padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; line-height: 1.4; }
+  .verdict.fire-long { background: rgba(248,81,73,0.28); color: #ff7b72; border: 1px solid #f85149; animation: pulse 1.2s ease-in-out infinite; }
+  .verdict.fire-short { background: rgba(63,185,80,0.28); color: #56d364; border: 1px solid #3fb950; animation: pulse 1.2s ease-in-out infinite; }
+  .verdict.wait { background: rgba(139,148,158,0.14); color: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
   .legend { font-size: 11px; color: var(--muted); line-height: 1.7; }
   .legend b { color: var(--text); }
 
@@ -97,6 +98,11 @@
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">加载中…</span></div>
 </header>
 
+<div class="signal-box">
+  <h3>🎯 发令枪（三级联立判决）</h3>
+  <div id="verdicts"></div>
+</div>
+
 <div class="daily-bar" id="dailyBar"><span class="lvl">日线</span><span class="info">加载中…</span></div>
 
 <div class="set-title">套B · 5倍递归 <small>1m → 5m → 25m → 125m（25m/125m 自聚合）</small></div>
@@ -105,14 +111,10 @@
 <div class="set-title">套A · 5倍递归 <small>3m → 15m → 75m → 375m（75m/375m 自聚合）</small></div>
 <div class="row cols4" id="setA"></div>
 
-<div class="signal-box">
-  <h3>🎯 发令枪（三级联立判决）</h3>
-  <div id="verdicts"></div>
-  <div class="legend">
-    <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 <b style="opacity:.6">△/▽空心</b>=实时苗头(未收盘) ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
-    中枢=3笔重叠(简化) ｜ 边界=绿柱最高/最低价(含影线) ｜ 连接段没踩回则独立、踩回才合并取并集
-    全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
-  </div>
+<div class="legend" style="margin-top:10px;">
+  <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 <b style="opacity:.6">△/▽空心</b>=实时苗头(未收盘) ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
+  中枢=3笔重叠(简化) ｜ 边界=绿柱最高/最低价(含影线) ｜ 连接段没踩回则独立、踩回才合并取并集
+  全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
 </div>
 
 <div id="fullscreen">
@@ -471,11 +473,16 @@ function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTi
     const cx = x(f.index);
     const fy = f.type === 'top' ? y(f.price) - 7 : y(f.price) + 8;
     if (f.pending) {
-      // 实时苗头（右K线未收盘）：空心符号 + 半透明，提示「还在走，未确认」
-      ctx.globalAlpha = 0.55;
-      ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#8b949e';
-      ctx.fillText(f.type === 'top' ? '△' : '▽', cx, fy);
+      // 实时苗头（右K线未收盘）：大号空心符号 + 亮黄描边，醒目提示
+      ctx.font = 'bold 17px sans-serif';
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = f.type === 'top' ? '#ffd166' : '#ffd166';
+      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
+      const ch = f.type === 'top' ? '△' : '▽';
+      ctx.strokeText(ch, cx, fy);
+      ctx.fillText(ch, cx, fy);
       ctx.globalAlpha = 1;
+      ctx.font = '12px sans-serif';
     } else {
       ctx.fillStyle = f.real ? (f.type === 'top' ? '#f85149' : '#3fb950') : '#6e7681';
       ctx.fillText(f.type === 'top' ? '▲' : '▼', cx, fy);
