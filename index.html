@@ -114,7 +114,8 @@
 <div class="legend" style="margin-top:10px;">
   <b>红K</b>=涨 <b>绿K</b>=跌 ｜ <b>▲红/▼绿</b>=真分型 <b>▲/▼灰</b>=假分型 <b style="opacity:.6">△/▽空心</b>=实时苗头(未收盘) ｜ <b style="color:#e3b341">━金线</b>=笔 ｜ <b style="color:#f85149">□红框</b>=上涨中枢 <b style="color:#3fb950">□绿框</b>=下跌中枢<br>
   中枢=3笔重叠(简化) ｜ 边界=绿柱最高/最低价(含影线) ｜ 连接段没踩回则独立、踩回才合并取并集
-  全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根
+  全屏内：<b>滚轮</b>=缩放（三图同步）｜ <b>悬停主图</b>=十字光标+时间 ｜ <b style="color:#ffd166">黄虚线</b>=主图每根柱子边界在子图的位置 ｜ <b style="color:#ffd166">黄高亮</b>=主图悬停那根在子图对应的几根<br>
+  <b style="color:#f0883e">━MA5</b> <b style="color:#58a6ff">━MA10</b> <b style="color:#bc8cff">━MA20</b> = 移动均线（收盘价）
 </div>
 
 <div id="fullscreen">
@@ -370,6 +371,25 @@ function judgeDirection(klines, fractals) {
   return { dir, label, detail: info };
 }
 
+// ===== MA 均线（指标线）=====
+const MA_CONFIG = [
+  { period: 5,  color: '#f0883e', label: 'MA5'  },
+  { period: 10, color: '#58a6ff', label: 'MA10' },
+  { period: 20, color: '#bc8cff', label: 'MA20' },
+];
+
+// 简单移动平均：返回与 klines 等长的数组，不足 period 处为 null
+function calcMA(klines, period) {
+  const out = new Array(klines.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < klines.length; i++) {
+    sum += klines[i].close;
+    if (i >= period) sum -= klines[i - period].close;
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
 // ===== 绘制（含十字光标 + 主图级别分隔线 + 高亮区间）=====
 function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTimes, hlTime) {
   const ctx = canvas.getContext('2d');
@@ -466,6 +486,22 @@ function draw(canvas, klines, fractals, bis, zhongshus, markTimes, cross, gridTi
     const top = Math.min(yO, yC), h = Math.max(Math.abs(yO - yC), 1);
     ctx.fillRect(cx - cw*0.32, top, cw*0.64, h);
   }
+
+  // MA 均线
+  for (const ma of MA_CONFIG) {
+    const maVals = calcMA(klines, ma.period);
+    ctx.strokeStyle = ma.color; ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (maVals[i] == null) continue;
+      const px = x(i), py = y(maVals[i]);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.lineWidth = 1;
 
   // 分型
   ctx.textAlign = 'center'; ctx.font = '12px sans-serif';
